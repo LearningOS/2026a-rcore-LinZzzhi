@@ -13,3 +13,5 @@ os/.gdb_history
 os/vendor/
 *.bak
 students.txt
+
+/EXERCISE_REPORT.md

@@ -9,7 +9,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 /// Mutex trait
 pub trait Mutex: Sync + Send {
     /// Lock the mutex
-    fn lock(&self);
+    fn lock(&self) -> bool;
     /// Unlock the mutex
     fn unlock(&self);
 }
@@ -17,12 +17,14 @@ pub trait Mutex: Sync + Send {
 /// Spinlock Mutex struct
 pub struct MutexSpin {
     locked: UPSafeCell<bool>,
+    resource: usize,
 }
 
 impl MutexSpin {
     /// Create a new spinlock mutex
-    pub fn new() -> Self {
+    pub fn new(resource: usize) -> Self {
         Self {
+            resource,
             locked: unsafe { UPSafeCell::new(false) },
         }
     }
@@ -30,7 +32,10 @@ impl MutexSpin {
 
 impl Mutex for MutexSpin {
     /// Lock the spinlock mutex
-    fn lock(&self) {
+    fn lock(&self) -> bool {
+        if !super::deadlock::request(self.resource) {
+            return false;
+        }
         trace!("kernel: MutexSpin::lock");
         loop {
             let mut locked = self.locked.exclusive_access();
@@ -40,12 +45,14 @@ impl Mutex for MutexSpin {
                 continue;
             } else {
                 *locked = true;
-                return;
+                super::deadlock::finish_spin(self.resource);
+                return true;
             }
         }
     }
 
     fn unlock(&self) {
+        super::deadlock::release(self.resource);
         trace!("kernel: MutexSpin::unlock");
         let mut locked = self.locked.exclusive_access();
         *locked = false;
@@ -55,6 +62,7 @@ impl Mutex for MutexSpin {
 /// Blocking Mutex struct
 pub struct MutexBlocking {
     inner: UPSafeCell<MutexBlockingInner>,
+    resource: usize,
 }
 
 pub struct MutexBlockingInner {
@@ -64,9 +72,10 @@ pub struct MutexBlockingInner {
 
 impl MutexBlocking {
     /// Create a new blocking mutex
-    pub fn new() -> Self {
+    pub fn new(resource: usize) -> Self {
         trace!("kernel: MutexBlocking::new");
         Self {
+            resource,
             inner: unsafe {
                 UPSafeCell::new(MutexBlockingInner {
                     locked: false,
@@ -79,7 +88,10 @@ impl MutexBlocking {
 
 impl Mutex for MutexBlocking {
     /// lock the blocking mutex
-    fn lock(&self) {
+    fn lock(&self) -> bool {
+        if !super::deadlock::request(self.resource) {
+            return false;
+        }
         trace!("kernel: MutexBlocking::lock");
         let mut mutex_inner = self.inner.exclusive_access();
         if mutex_inner.locked {
@@ -89,10 +101,12 @@ impl Mutex for MutexBlocking {
         } else {
             mutex_inner.locked = true;
         }
+        true
     }
 
     /// unlock the blocking mutex
     fn unlock(&self) {
+        super::deadlock::release(self.resource);
         trace!("kernel: MutexBlocking::unlock");
         let mut mutex_inner = self.inner.exclusive_access();
         assert!(mutex_inner.locked);

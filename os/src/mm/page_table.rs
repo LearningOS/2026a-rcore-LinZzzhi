@@ -274,3 +274,44 @@ impl Iterator for UserBufferIterator {
         }
     }
 }
+
+/// Validate every page before copying user data, including cross-page structures.
+/// Only the lower, canonical Sv39 user half is accepted.
+pub fn user_buffer_valid(token: usize, ptr: usize, len: usize, write: bool) -> bool {
+    let end = match ptr.checked_add(len) {
+        Some(end) if ptr < (1usize << 38) && end <= (1usize << 38) => end,
+        _ => return false,
+    };
+    let table = PageTable::from_token(token);
+    let mut addr = ptr;
+    while addr < end {
+        let va = VirtAddr::from(addr);
+        match table.translate(va.floor()) {
+            Some(pte)
+                if pte.is_valid()
+                    && pte.flags().contains(PTEFlags::U)
+                    && if write {
+                        pte.writable()
+                    } else {
+                        pte.readable()
+                    } => {}
+            _ => return false,
+        }
+        addr = ((addr / 4096) + 1) * 4096;
+    }
+    true
+}
+
+/// Copy bytes after validating the complete destination, avoiding partial writes.
+pub fn copy_to_user(token: usize, ptr: usize, data: &[u8]) -> bool {
+    if !user_buffer_valid(token, ptr, data.len(), true) {
+        return false;
+    }
+    let mut offset = 0;
+    for part in translated_byte_buffer(token, ptr as *const u8, data.len()) {
+        let len = part.len();
+        part.copy_from_slice(&data[offset..offset + len]);
+        offset += len;
+    }
+    true
+}

@@ -27,6 +27,8 @@ pub struct ProcessControlBlock {
 pub struct ProcessControlBlockInner {
     /// is zombie?
     pub is_zombie: bool,
+    /// Per-process synchronization resource accounting.
+    pub deadlock: crate::sync::deadlock::DeadlockDetector,
     /// memory set(address space)
     pub memory_set: MemorySet,
     /// parent process
@@ -101,6 +103,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
+                    deadlock: crate::sync::deadlock::DeadlockDetector::new(),
                     memory_set,
                     parent: None,
                     children: Vec::new(),
@@ -162,6 +165,13 @@ impl ProcessControlBlock {
         // substitute memory_set
         trace!("kernel: exec .. substitute memory_set");
         self.inner_exclusive_access().memory_set = memory_set;
+        {
+            let mut inner = self.inner_exclusive_access();
+            inner.deadlock = crate::sync::deadlock::DeadlockDetector::new();
+            inner.mutex_list.clear();
+            inner.semaphore_list.clear();
+            inner.condvar_list.clear();
+        }
         // then we alloc user resource for main thread again
         // since memory_set has been changed
         trace!("kernel: exec .. alloc user resource for main thread again");
@@ -234,6 +244,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
+                    deadlock: crate::sync::deadlock::DeadlockDetector::new(),
                     memory_set,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),

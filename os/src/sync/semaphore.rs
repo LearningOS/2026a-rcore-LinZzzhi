@@ -8,6 +8,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 pub struct Semaphore {
     /// semaphore inner
     pub inner: UPSafeCell<SemaphoreInner>,
+    resource: usize,
 }
 
 pub struct SemaphoreInner {
@@ -17,9 +18,10 @@ pub struct SemaphoreInner {
 
 impl Semaphore {
     /// Create a new semaphore
-    pub fn new(res_count: usize) -> Self {
+    pub fn new(res_count: usize, resource: usize) -> Self {
         trace!("kernel: Semaphore::new");
         Self {
+            resource,
             inner: unsafe {
                 UPSafeCell::new(SemaphoreInner {
                     count: res_count as isize,
@@ -31,6 +33,7 @@ impl Semaphore {
 
     /// up operation of semaphore
     pub fn up(&self) {
+        super::deadlock::release(self.resource);
         trace!("kernel: Semaphore::up");
         let mut inner = self.inner.exclusive_access();
         inner.count += 1;
@@ -42,7 +45,10 @@ impl Semaphore {
     }
 
     /// down operation of semaphore
-    pub fn down(&self) {
+    pub fn down(&self) -> bool {
+        if !super::deadlock::request(self.resource) {
+            return false;
+        }
         trace!("kernel: Semaphore::down");
         let mut inner = self.inner.exclusive_access();
         inner.count -= 1;
@@ -51,5 +57,6 @@ impl Semaphore {
             drop(inner);
             block_current_and_run_next();
         }
+        true
     }
 }
