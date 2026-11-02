@@ -56,6 +56,7 @@ impl OSInode {
 }
 
 lazy_static! {
+    /// Mounted filesystem root used by open and directory operations.
     pub static ref ROOT_INODE: Arc<Inode> = {
         let efs = EasyFileSystem::open(BLOCK_DEVICE.clone());
         Arc::new(EasyFileSystem::root_inode(&efs))
@@ -126,6 +127,18 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
 }
 
 impl File for OSInode {
+    fn stat(&self) -> Option<super::Stat> {
+        let inner = self.inner.exclusive_access();
+        let id = inner.inode.inode_id();
+        Some(super::Stat {
+            dev: 0,
+            ino: id as u64,
+            mode: super::StatMode::FILE,
+            nlink: ROOT_INODE.link_count(id),
+            pad: [0; 7],
+        })
+    }
+
     fn readable(&self) -> bool {
         self.readable
     }
