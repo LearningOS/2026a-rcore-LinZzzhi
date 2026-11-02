@@ -142,6 +142,24 @@ pub fn run_first_task() {
     TASK_MANAGER.run_first_task();
 }
 
+/// Record a syscall before dispatch, without holding the borrow across a switch.
+static SYSCALL_COUNTS: UPSafeCell<[[usize; 512]; MAX_APP_NUM]> =
+    unsafe { UPSafeCell::new([[0; 512]; MAX_APP_NUM]) };
+
+/// Count calls in static storage to avoid large bootstrap stack temporaries.
+pub fn record_syscall(id: usize) {
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    if let Some(count) = SYSCALL_COUNTS.exclusive_access()[current].get_mut(id) {
+        *count += 1;
+    }
+}
+
+/// Query the current task's counter, rejecting out-of-range syscall IDs.
+pub fn syscall_count(id: usize) -> Option<usize> {
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    SYSCALL_COUNTS.exclusive_access()[current].get(id).copied()
+}
+
 /// Switch current `Running` task to the task we have found,
 /// or there is no `Ready` task and we can exit with all applications completed
 fn run_next_task() {
