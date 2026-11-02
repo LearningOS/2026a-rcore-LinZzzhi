@@ -10,6 +10,8 @@ use crate::trap::{trap_handler, TrapContext};
 pub struct TaskControlBlock {
     /// Save task context
     pub task_cx: TaskContext,
+    /// Per-task syscall counts.
+    pub syscall_count: [usize; 512],
 
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
@@ -57,6 +59,7 @@ impl TaskControlBlock {
         );
         let task_control_block = Self {
             task_status,
+            syscall_count: [0; 512],
             task_cx: TaskContext::goto_trap_return(kernel_stack_top),
             memory_set,
             trap_cx_ppn,

@@ -25,28 +25,52 @@ pub fn sys_yield() -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!("kernel: sys_get_time");
-    -1
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    let us = crate::timer::get_time_us();
+    let mut data = [0u8; 2 * core::mem::size_of::<usize>()];
+    let n = core::mem::size_of::<usize>();
+    data[..n].copy_from_slice(&(us / 1_000_000).to_ne_bytes());
+    data[n..].copy_from_slice(&(us % 1_000_000).to_ne_bytes());
+    if crate::mm::copy_to_user(crate::task::current_user_token(), ts as usize, &data) {
+        0
+    } else {
+        -1
+    }
 }
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
-    trace!("kernel: sys_trace");
-    -1
+pub fn sys_trace(request: usize, id: usize, data: usize) -> isize {
+    if request == 2 {
+        return crate::task::syscall_count(id)
+            .map(|n| n as isize)
+            .unwrap_or(-1);
+    }
+    let token = crate::task::current_user_token();
+    if request > 1 || !crate::mm::user_buffer_valid(token, id, 1, request == 1) {
+        return -1;
+    }
+    let va = crate::mm::VirtAddr::from(id);
+    let pte = crate::mm::PageTable::from_token(token)
+        .translate(va.floor())
+        .unwrap();
+    let byte = &mut pte.ppn().get_bytes_array()[va.page_offset()];
+    if request == 0 {
+        *byte as isize
+    } else {
+        *byte = data as u8;
+        0
+    }
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
+    crate::task::with_current_memory(|memory| memory.mmap(start, len, prot))
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    crate::task::with_current_memory(|memory| memory.munmap(start, len))
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

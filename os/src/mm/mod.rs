@@ -26,3 +26,5 @@ pub fn init() {
     frame_allocator::init_frame_allocator();
     KERNEL_SPACE.exclusive_access().activate();
 }
+
+pub use page_table::{copy_to_user, user_buffer_valid};
