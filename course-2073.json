@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "courseId": 2073,
+  "repository": "LearningOS/2026a-rcore-LinZzzhi",
+  "user": "LinZzzhi",
+  "totalScore": 500,
+  "chapters": {
+    "ch3": {
+      "points": "7/7",
+      "score": 100,
+      "commit": "970afa8241ecbe390bfaffe0e57733c447c4924e"
+    }
+  },
+  "score": 100,
+  "upload": {
+    "status": "pending",
+    "runId": "41454523120",
+    "runAttempt": "1"
+  }
+}
